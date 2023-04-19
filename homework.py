@@ -24,18 +24,23 @@ HOMEWORK_VERDICTS = {
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
+ERROR_MESSAGE = 'Отсутствует переменная окружения: {0}'
+
 
 def check_tokens():
     """Проверяет доступность переменных окружения."""
     logging.info('Проверка доступность переменных окружения.')
-    environment_variables = [PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]
-    for name in environment_variables:
-        if name is None:
-            logging.critical(f'Отсутствует переменная окружения! {name}')
-            raise ValueError(f'Отсутствует переменная окружения! {name}')
-        else:
-            logging.info('Все переменные окружения доступны!')
-            return True
+    environment_variables = ['PRACTICUM_TOKEN',
+                             'TELEGRAM_TOKEN',
+                             'TELEGRAM_CHAT_ID']
+    variables = [
+        name for name in environment_variables
+        if globals()[name] == '' or globals()[name] is None
+    ]
+    if variables:
+        logging.critical(f'Отсутствует переменная окружения: {variables}')
+        raise ValueError(f'Отсутствует переменная окружения: {variables}')
+    logging.info('Все переменные окружения доступны!')
 
 
 def send_message(bot, message):
@@ -64,7 +69,6 @@ def get_api_answer(timestamp):
         homework_json = homework.json()
         return homework_json
     except JSONDecodeError:
-        logging.error('Не удалось преобразовать в json.')
         raise ValueError('Не удалось преобразовать в json.')
 
 
@@ -87,7 +91,7 @@ def check_response(response):
 def parse_status(homework):
     """Извлекает из информации о конкретной работе статус этой работы."""
     homework_name = homework.get('homework_name')
-    if homework_name is None:
+    if 'homework_name' not in homework:
         raise KeyError('Не найден такой ключ')
     homework_status = homework.get('status')
     if homework_status not in HOMEWORK_VERDICTS:
@@ -101,10 +105,12 @@ def main():
     logging.info('Вы запустили Бота')
     timestamp = int(time.time())
 
+    check_tokens()
+
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     previous_message = ''
 
-    if check_tokens() is True:
+    while True:
         try:
             response = get_api_answer(timestamp)
             homeworks = check_response(response)
