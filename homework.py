@@ -6,6 +6,7 @@ import telegram
 import time
 
 from dotenv import load_dotenv
+from json import JSONDecodeError
 
 load_dotenv()
 
@@ -28,12 +29,13 @@ def check_tokens():
     """Проверяет доступность переменных окружения."""
     logging.info('Проверка доступность переменных окружения.')
     environment_variables = [PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID]
-    if not all(environment_variables):
-        logging.critical('Отсутствует переменная окружения!')
-        raise ValueError('Отсутствует переменная окружения!')
-    else:
-        logging.info('Все переменные окружения доступны!')
-        return True
+    for name in environment_variables:
+        if name is None:
+            logging.critical(f'Отсутствует переменная окружения! {name}')
+            raise ValueError(f'Отсутствует переменная окружения! {name}')
+        else:
+            logging.info('Все переменные окружения доступны!')
+            return True
 
 
 def send_message(bot, message):
@@ -58,11 +60,12 @@ def get_api_answer(timestamp):
         raise ConnectionError(f'Ошибка подключения к эндпоинту. {error}')
     if homework.status_code != 200:
         raise RuntimeError('Получен неожиданный статус API.')
-    homework_json = homework.json()
-    for error in ('code', 'error'):
-        if error in homework_json:
-            raise RuntimeError('Ошибка сервера.')
-    return homework_json
+    try:
+        homework_json = homework.json()
+        return homework_json
+    except JSONDecodeError:
+        logging.error('Не удалось преобразовать в json.')
+        raise ValueError('Не удалось преобразовать в json.')
 
 
 def check_response(response):
@@ -72,6 +75,8 @@ def check_response(response):
         raise TypeError('Ответ API не соответствует требованиям')
     if 'homeworks' not in response:
         raise ValueError('В ответе нет значения "homeworks"')
+    if 'current_date' not in response:
+        raise ValueError('В ответе нет значения "current_date"')
     homeworks = response.get('homeworks')
     if not isinstance(homeworks, list):
         raise TypeError('Данный тип данных не является списком')
@@ -82,7 +87,7 @@ def check_response(response):
 def parse_status(homework):
     """Извлекает из информации о конкретной работе статус этой работы."""
     homework_name = homework.get('homework_name')
-    if len(homework_name) == 0:
+    if homework_name is None:
         raise KeyError('Не найден такой ключ')
     homework_status = homework.get('status')
     if homework_status not in HOMEWORK_VERDICTS:
@@ -96,12 +101,10 @@ def main():
     logging.info('Вы запустили Бота')
     timestamp = int(time.time())
 
-    check_tokens()
-
     bot = telegram.Bot(token=TELEGRAM_TOKEN)
     previous_message = ''
 
-    while True:
+    if check_tokens() is True:
         try:
             response = get_api_answer(timestamp)
             homeworks = check_response(response)
@@ -112,7 +115,8 @@ def main():
             logging.exception(message)
             if previous_message != message and send_message(bot, message):
                 previous_message = message
-        time.sleep(RETRY_PERIOD)
+        finally:
+            time.sleep(RETRY_PERIOD)
 
 
 if __name__ == '__main__':
